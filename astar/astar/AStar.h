@@ -137,56 +137,6 @@ std::basic_iostream<char>::basic_ostream& operator<<(std::basic_iostream<char>::
 	return out;
 }
 
-// This outputs a grid. Pass in a distances map if you want to print
-// the distances, or pass in a point_to map if you want to print
-// arrows that point to the parent location, or pass in a path vector
-// if you want to draw the path.
-template<class Graph>
-
-//this is here for drawing a walked path in a grid to console
-void draw_grid(const Graph& graph,
-	std::unordered_map<GridLocation, double>* distances = nullptr,
-	std::unordered_map<GridLocation, GridLocation>* point_to = nullptr,
-	std::vector<GridLocation>* path = nullptr,
-	GridLocation* start = nullptr,
-	GridLocation* goal = nullptr) {
-	const int field_width = 3;
-	std::cout << std::string(field_width * graph.width, '_') << '\n';
-	for (int y = 0; y != graph.height; ++y) {
-		for (int x = 0; x != graph.width; ++x) {
-			GridLocation id{ x, y };
-			if (graph.walls.find(id) != graph.walls.end()) {
-				std::cout << std::string(field_width, '#');
-			}
-			else if (start && id == *start) {
-				std::cout << " A ";
-			}
-			else if (goal && id == *goal) {
-				std::cout << " Z ";
-			}
-			else if (point_to != nullptr && point_to->count(id)) {
-				GridLocation next = (*point_to)[id];
-				if (next.x == x + 1) { std::cout << " > "; }
-				else if (next.x == x - 1) { std::cout << " < "; }
-				else if (next.y == y + 1) { std::cout << " v "; }
-				else if (next.y == y - 1) { std::cout << " ^ "; }
-				else { std::cout << " * "; }
-			}
-			else if (distances != nullptr && distances->count(id)) {
-				std::cout << ' ' << std::left << std::setw(field_width - 1) << (*distances)[id];
-			}
-			else if (path != nullptr && find(path->begin(), path->end(), id) != path->end()) {
-				std::cout << " @ ";
-			}
-			else {
-				std::cout << " . ";
-			}
-		}
-		std::cout << '\n';
-	}
-	std::cout << std::string(field_width * graph.width, '~') << '\n';
-}
-
 //function adds rectangular obstacles to supplied grid. X coordinates from x1 to x2 any Y coordinates from y1 to y2.
 void add_rect(SquareGrid& grid, int x1, int y1, int x2, int y2) {
 	for (int x = x1; x < x2; ++x) {
@@ -194,16 +144,6 @@ void add_rect(SquareGrid& grid, int x1, int y1, int x2, int y2) {
 			grid.walls.insert(GridLocation{ x, y });
 		}
 	}
-}
-
-//function returns a grid of size 30, 15 and four rectangular walls
-SquareGrid make_diagram1() {
-	SquareGrid grid(30, 15);
-	add_rect(grid, 3, 3, 5, 12);
-	add_rect(grid, 13, 4, 15, 15);
-	add_rect(grid, 21, 0, 23, 7);
-	add_rect(grid, 23, 5, 26, 7);
-	return grid;
 }
 
 // Weighted struct inheriting from basic grid.
@@ -223,27 +163,6 @@ struct GridWithWeights : SquareGrid {
 	}
 };
 
-//function returns a weighted grid of size 10,10, a filled forrest and one obstacle. More info about forrest filling inside.
-GridWithWeights make_diagram4() {
-	//setting size
-	GridWithWeights grid(100, 100);
-	//adding wall
-	add_rect(grid, 1, 7, 4, 9);
-	typedef GridLocation L;
-
-	//fills the forrest set with 27 basic elements with coordinates provided.
-	grid.forests = std::unordered_set<GridLocation>{
-	  L{3, 4}, L{3, 5}, L{4, 1}, L{4, 2},
-	  L{4, 3}, L{4, 4}, L{4, 5}, L{4, 6},
-	  L{4, 7}, L{4, 8}, L{5, 1}, L{5, 2},
-	  L{5, 3}, L{5, 4}, L{5, 5}, L{5, 6},
-	  L{5, 7}, L{5, 8}, L{6, 2}, L{6, 3},
-	  L{6, 4}, L{6, 5}, L{6, 6}, L{6, 7},
-	  L{7, 3}, L{7, 4}, L{7, 5}
-	};
-	return grid;
-}
-
 //A priority structure holding a queue of pairs and a vector of pairs.
 template<typename T, typename priority_t>
 struct PriorityQueue {
@@ -262,7 +181,7 @@ struct PriorityQueue {
 		elements.emplace(priority, item);
 	}
 
-	//returnsitem with best priority.
+	//returns item with best priority.
 	T get() {
 		T best_item = elements.top().second;
 		elements.pop();
@@ -314,19 +233,19 @@ std::vector<Location> reconstruct_path(Location start, Location goal, std::unord
 		path.push_back(current);
 		current = came_from[current];
 	}
-	path.push_back(start); // optional
+	//path.push_back(start); // optional
 	std::reverse(path.begin(), path.end());
 	return path;
 }
 
-// A heuristic for a*
+// A heuristic for a* (Manhattan distance)
 
 inline double heuristic(GridLocation a, GridLocation b)
 {
 	return std::abs(a.x - b.x) + std::abs(a.y - b.y);
 }
 
-//a star algorithm
+// A* algorithm
 template<typename Location, typename Graph>
 void a_star_search(Graph graph, Location start, Location goal,
 	std::unordered_map<Location, Location>& came_from,
@@ -430,6 +349,12 @@ public:
 		return true;
 	}
 
+	/// <summary>
+	/// Returns a collection of elements, that describe a path form start to end, without the starting node!
+	/// </summary>
+	/// <param name="start">The start.</param>
+	/// <param name="end">The end.</param>
+	/// <returns></returns>
 	std::vector<GridLocation> searchForWholePath(GridLocation start, GridLocation end)
 	{
 		if (!forrestGrid.in_bounds(start) || !forrestGrid.in_bounds(end))
@@ -442,6 +367,32 @@ public:
 		a_star_search(this->forrestGrid, start, end, this->came_from, this->cost_so_far);
 		//reconstruct and return the walked path.
 		return reconstruct_path(start, end, this->came_from);
+	}
+
+	/// <summary>
+	/// Returns a next logical tile to go to from the current position represented by start. Diagonal movement is allowed.
+	/// </summary>
+	/// <param name="start">The start.</param>
+	/// <param name="end">The end.</param>
+	/// <returns></returns>
+	GridLocation nextTile(GridLocation start, GridLocation end)
+	{
+		if (!forrestGrid.in_bounds(start) || !forrestGrid.in_bounds(end))
+		{
+			GridLocation empty{ 0,0 };
+			return empty;
+		}
+
+		if (start == end)
+		{
+			return start;
+		}
+
+		//do the whole thing.
+		a_star_search(this->forrestGrid, start, end, this->came_from, this->cost_so_far);
+		//reconstruct and return the walked path.
+		auto pathCollection = reconstruct_path(start, end, this->came_from);
+		return pathCollection.at(0);
 	}
 
 public:
