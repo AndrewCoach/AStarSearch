@@ -538,6 +538,8 @@ public:
 	/// <returns></returns>
 	std::vector<GridLocation> searchForWholePathDiagonal(GridLocation start, GridLocation end)
 	{
+		this->came_from.clear();
+		this->cost_so_far.clear();
 		if (!forrestGridDiagonal.in_bounds(start) || !forrestGridDiagonal.in_bounds(end))
 		{
 			std::vector<GridLocation> empty;
@@ -546,8 +548,6 @@ public:
 
 		//do the whole thing.
 		a_star_search_Euklidean(this->forrestGridDiagonal, start, end, this->came_from, this->cost_so_far);
-		this->came_from.clear();
-		this->cost_so_far.clear();
 
 		//reconstruct and return the walked path.
 		return reconstruct_path(start, end, this->came_from);
@@ -561,6 +561,8 @@ public:
 /// <returns></returns>
 	std::vector<GridLocation> searchForWholePathNonDiagonal(GridLocation start, GridLocation end)
 	{
+		this->came_from.clear();
+		this->cost_so_far.clear();
 		if (!forrestGridNonDiagonal.in_bounds(start) || !forrestGridNonDiagonal.in_bounds(end))
 		{
 			std::vector<GridLocation> empty;
@@ -569,8 +571,6 @@ public:
 
 		//do the whole thing.
 		a_star_search_Manhattan(this->forrestGridNonDiagonal, start, end, this->came_from, this->cost_so_far);
-		this->came_from.clear();
-		this->cost_so_far.clear();
 
 		//reconstruct and return the walked path.
 		return reconstruct_path(start, end, this->came_from);
