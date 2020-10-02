@@ -25,7 +25,7 @@ public:
 		this->Fill(0, 0, ScreenWidth(), ScreenHeight(), PIXEL_SOLID, COLOUR::FG_WHITE);
 
 		// create for ASTAR, will have to be redone
-		astar.addEmptyWeightedGraph(this->ScreenWidth(), this->ScreenHeight());
+		astar.addEmptyWeightedGraphDiagonal(this->ScreenWidth(), this->ScreenHeight());
 
 		return true;
 	}
@@ -62,7 +62,7 @@ public:
 								xpressed = !xpressed;
 
 								//assign the walls to astar.
-								astar.forrestGrid.walls = this->walls;
+								astar.forrestGridDiagonal.walls = this->walls;
 								//assign start and end
 								wallBool = !wallBool;
 								// i wanna end the app here
@@ -103,10 +103,10 @@ public:
 			//initial app is done, now we display the result.
 
 			//add the walls
-			astar.addWallCollectionToGraph(walls);
+			astar.addWallCollectionToGraphDiagonal(walls);
 
 			//search the path.
-			auto walkedPath = astar.searchForWholePath(start, end);
+			auto walkedPath = astar.searchForWholePathDiagonal(start, end);
 
 			// START OF DRAWING LOGIC
 
@@ -120,7 +120,7 @@ public:
 			}
 
 			//draw walls
-			for (const auto& element : astar.forrestGrid.walls)
+			for (const auto& element : astar.forrestGridDiagonal.walls)
 			{
 				this->Fill(element.x, element.y, element.x + 1, element.y + 1, PIXEL_SOLID, COLOUR::FG_BLUE);
 			}
@@ -162,12 +162,5 @@ int main()
 	OneLoneCoder_Example game;
 	game.ConstructConsole(width, height, 12, 12);
 	game.Start();
-	// Use olcConsoleGameEngine derived app
-	//OneLoneCoder_Example game;
-	// Create a console with resolution 160x100 characters
-	// Each character occupies 8x8 pixels
-	//game.ConstructConsole(102, 102, 8, 8);
-	// Start the engine!
-	//game.Start();
 	return 0;
 }

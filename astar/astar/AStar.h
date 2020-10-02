@@ -9,8 +9,12 @@
 #include <tuple>
 #include <algorithm>
 #include <cstdlib>
+#include <math.h>
 #include "olcConsoleGameEngine.h"
 
+#ifndef INVALID_LOCATION
+#define INVALID_LOCATION GridLocation{-1,-1}
+#endif
 // test definition for breadth first search;
 struct SimpleGraph {
 	std::unordered_map<char, std::vector<char> > edges;
@@ -47,7 +51,58 @@ namespace std {
 }
 
 // Represents a grid comprised of all basic elements (gridlocation) and other functions.
-struct SquareGrid {
+struct SquareGridNonDiagonal {
+	//array of 4 basic elements representing - directions (left, right, up, down)...
+	// USED TO BE STATIC!
+	std::array<GridLocation, 4> DIRS =
+	{
+		GridLocation{1, 0}, GridLocation{0, -1},
+		GridLocation{-1, 0}, GridLocation{0, 1}
+	};
+
+	//width and height of the grid of elements (width * height = for amount of elements)
+	int width, height;
+
+	//All the walls represented by elements.
+	std::unordered_set<GridLocation> walls;
+
+	//ctor to fill the width and height of grid
+	SquareGridNonDiagonal(int width_, int height_)
+		: width(width_), height(height_) {}
+
+	//checks to see, if the supplied element is in the grid
+	bool in_bounds(GridLocation id) const {
+		return 0 <= id.x && id.x < width
+			&& 0 <= id.y && id.y < height;
+	}
+	//CHECKS if the supplied element is a wall, I have added diagonal position agnostic pathfinding.
+	bool passable(GridLocation dest, GridLocation whereIAm) const
+	{
+		return walls.find(dest) == walls.end();
+	}
+
+	//A function returning a vector with all elements that are neighbors to the one element passed in (maximum should be 4 neighbors).
+	std::vector<GridLocation> neighbors(GridLocation id) const {
+		std::vector<GridLocation> results;
+
+		for (GridLocation dir : DIRS) {
+			GridLocation next{ id.x + dir.x, id.y + dir.y };
+			if (in_bounds(next) && passable(next, id)) {
+				results.push_back(next);
+			}
+		}
+
+		if ((id.x + id.y) % 2 == 0) {
+			// aesthetic improvement on square grids
+			std::reverse(results.begin(), results.end());
+		}
+
+		return results;
+	}
+};
+
+// Represents a grid comprised of all basic elements (gridlocation) and other functions.
+struct SquareGridDiagonal {
 	//array of 4 basic elements representing - directions (left, right, up, down)...
 	// USED TO BE STATIC!
 	std::array<GridLocation, 8> DIRS =
@@ -64,7 +119,7 @@ struct SquareGrid {
 	std::unordered_set<GridLocation> walls;
 
 	//ctor to fill the width and height of grid
-	SquareGrid(int width_, int height_)
+	SquareGridDiagonal(int width_, int height_)
 		: width(width_), height(height_) {}
 
 	//checks to see, if the supplied element is in the grid
@@ -138,7 +193,16 @@ std::basic_iostream<char>::basic_ostream& operator<<(std::basic_iostream<char>::
 }
 
 //function adds rectangular obstacles to supplied grid. X coordinates from x1 to x2 any Y coordinates from y1 to y2.
-void add_rect(SquareGrid& grid, int x1, int y1, int x2, int y2) {
+void add_rect(SquareGridDiagonal& grid, int x1, int y1, int x2, int y2) {
+	for (int x = x1; x < x2; ++x) {
+		for (int y = y1; y < y2; ++y) {
+			grid.walls.insert(GridLocation{ x, y });
+		}
+	}
+}
+
+//function adds rectangular obstacles to supplied grid. X coordinates from x1 to x2 any Y coordinates from y1 to y2.
+void add_rect(SquareGridNonDiagonal& grid, int x1, int y1, int x2, int y2) {
 	for (int x = x1; x < x2; ++x) {
 		for (int y = y1; y < y2; ++y) {
 			grid.walls.insert(GridLocation{ x, y });
@@ -147,14 +211,31 @@ void add_rect(SquareGrid& grid, int x1, int y1, int x2, int y2) {
 }
 
 // Weighted struct inheriting from basic grid.
-struct GridWithWeights : SquareGrid {
+struct GridWithWeightsDiagonal : SquareGridDiagonal {
 	// this is a collection of basic elements that will have more cost to them.
 	std::unordered_set<GridLocation> forests;
 	//better collection to hold arbitrary weights for nodes. If node is not included, weight is presumed to be 1.
 	std::unordered_map<GridLocation, int> forestWeights;
 
 	//calls a inherited constructor to set size of grid.
-	GridWithWeights(int w, int h) : SquareGrid(w, h) {}
+	GridWithWeightsDiagonal(int w, int h) : SquareGridDiagonal(w, h) {}
+
+	//this method returns the weight for supplied current and desired element to move to. currently only considering the latter.
+	//also only considering values 5 for forrest and 1 for normal.
+	double cost(GridLocation from_node, GridLocation to_node) const {
+		return forestWeights.find(to_node) != forestWeights.end() ? forestWeights.find(to_node)->second : 1;
+	}
+};
+
+// Weighted struct inheriting from basic grid.
+struct GridWithWeightsNonDiagonal : SquareGridNonDiagonal {
+	// this is a collection of basic elements that will have more cost to them.
+	std::unordered_set<GridLocation> forests;
+	//better collection to hold arbitrary weights for nodes. If node is not included, weight is presumed to be 1.
+	std::unordered_map<GridLocation, int> forestWeights;
+
+	//calls a inherited constructor to set size of grid.
+	GridWithWeightsNonDiagonal(int w, int h) : SquareGridNonDiagonal(w, h) {}
 
 	//this method returns the weight for supplied current and desired element to move to. currently only considering the latter.
 	//also only considering values 5 for forrest and 1 for normal.
@@ -245,9 +326,14 @@ inline double heuristic(GridLocation a, GridLocation b)
 	return std::abs(a.x - b.x) + std::abs(a.y - b.y);
 }
 
+inline double euklideanHeuristic(GridLocation a, GridLocation b)
+{
+	return sqrt(((a.x - b.x) * (a.x - b.x)) + ((a.y - b.y) * (a.y - b.y)));
+}
+
 // A* algorithm
 template<typename Location, typename Graph>
-void a_star_search(Graph graph, Location start, Location goal,
+void a_star_search_Manhattan(Graph graph, Location start, Location goal,
 	std::unordered_map<Location, Location>& came_from,
 	std::unordered_map<Location, double>& cost_so_far)
 {
@@ -277,6 +363,37 @@ void a_star_search(Graph graph, Location start, Location goal,
 	}
 }
 
+template<typename Location, typename Graph>
+void a_star_search_Euklidean(Graph graph, Location start, Location goal,
+	std::unordered_map<Location, Location>& came_from,
+	std::unordered_map<Location, double>& cost_so_far)
+{
+	PriorityQueue<Location, double> frontier;
+	frontier.put(start, 0);
+
+	came_from[start] = start;
+	cost_so_far[start] = 0;
+
+	while (!frontier.empty()) {
+		Location current = frontier.get();
+
+		if (current == goal) {
+			break;
+		}
+
+		for (Location next : graph.neighbors(current)) {
+			double new_cost = cost_so_far[current] + graph.cost(current, next);
+			if (cost_so_far.find(next) == cost_so_far.end()
+				|| new_cost < cost_so_far[next]) {
+				cost_so_far[next] = new_cost;
+				double priority = new_cost + euklideanHeuristic(next, goal);
+				frontier.put(next, priority);
+				came_from[next] = current;
+			}
+		}
+	}
+}
+
 class AStar
 {
 public:
@@ -286,66 +403,130 @@ public:
 	AStar()
 
 	{
-		forrestGrid.width = 100;
-		forrestGrid.height = 100;
+		forrestGridNonDiagonal.width = 100;
+		forrestGridNonDiagonal.height = 100;
+		forrestGridDiagonal.width = 100;
+		forrestGridDiagonal.height = 100;
 	};
 
-	bool addEmptyWeightedGraph(int width, int height)
+	bool addEmptyWeightedGraphNonDiagonal(int width, int height)
 	{
-		forrestGrid.width = width;
-		forrestGrid.height = height;
+		forrestGridNonDiagonal.width = width;
+		forrestGridNonDiagonal.height = height;
+		return true;
+	}
+
+	bool addEmptyWeightedGraphDiagonal(int width, int height)
+	{
+		forrestGridDiagonal.width = width;
+		forrestGridDiagonal.height = height;
 		return true;
 	}
 	/// <summary>
-	/// Adds one rectangular wall to both types of graph.
+	/// Adds one rectangular wall to diagonal graph.
 	/// </summary>
 	/// <param name="xStart">The x start.</param>
 	/// <param name="xEnd">The x end.</param>
 	/// <param name="yStart">The y start.</param>
 	/// <param name="yEnd">The y end.</param>
 	/// <returns>bool if succeeded</returns>
-	bool addWallToGraph(int xStart, int xEnd, int yStart, int yEnd)
+	bool addWallToGraphDiagonal(int xStart, int xEnd, int yStart, int yEnd)
 	{
 		GridLocation elementx{ xStart, yStart };
 		GridLocation elementy{ xEnd, yEnd };
-		if (!forrestGrid.in_bounds(elementx) || !forrestGrid.in_bounds(elementy))
+		if (!forrestGridDiagonal.in_bounds(elementx) || !forrestGridDiagonal.in_bounds(elementy))
 			return false;
-		add_rect(forrestGrid, xStart, yStart, xEnd, yEnd);
+		add_rect(forrestGridDiagonal, xStart, yStart, xEnd, yEnd);
 		return true;
 	}
+
 	/// <summary>
-	/// Adds the whole colection of wall locations into both graphs. Wall is represented by Gridlocation element with an X and Y coordinate;
+/// Adds one rectangular wall to non diagonal graph.
+/// </summary>
+/// <param name="xStart">The x start.</param>
+/// <param name="xEnd">The x end.</param>
+/// <param name="yStart">The y start.</param>
+/// <param name="yEnd">The y end.</param>
+/// <returns>bool if succeeded</returns>
+	bool addWallToGraphNonDiagonal(int xStart, int xEnd, int yStart, int yEnd)
+	{
+		GridLocation elementx{ xStart, yStart };
+		GridLocation elementy{ xEnd, yEnd };
+		if (!forrestGridNonDiagonal.in_bounds(elementx) || !forrestGridNonDiagonal.in_bounds(elementy))
+			return false;
+		add_rect(forrestGridNonDiagonal, xStart, yStart, xEnd, yEnd);
+		return true;
+	}
+
+	/// <summary>
+	/// Adds the whole colection of wall locations into diagonal graph. Wall is represented by Gridlocation element with an X and Y coordinate;
 	/// </summary>
 	/// <param name="inWalls">The in walls.</param>
 	/// <returns></returns>
-	bool addWallCollectionToGraph(std::unordered_set<GridLocation> inWalls)
+	bool addWallCollectionToGraphDiagonal(std::unordered_set<GridLocation> inWalls)
 	{
 		for (auto& element : inWalls)
 		{
-			if (!forrestGrid.in_bounds(element))
+			if (!forrestGridDiagonal.in_bounds(element))
 				return false;
 		}
 
-		forrestGrid.walls = inWalls;
+		forrestGridDiagonal.walls = inWalls;
 		return true;
 	}
 
 	/// <summary>
-	/// Adds the forest map to weighted graph. Forest map is a map of pairs of Gridlocation elements and their values as int.
+/// Adds the whole colection of wall locations into non diagonal graph. Wall is represented by Gridlocation element with an X and Y coordinate;
+/// </summary>
+/// <param name="inWalls">The in walls.</param>
+/// <returns></returns>
+	bool addWallCollectionToGraphNonDiagonal(std::unordered_set<GridLocation> inWalls)
+	{
+		for (auto& element : inWalls)
+		{
+			if (!forrestGridNonDiagonal.in_bounds(element))
+				return false;
+		}
+
+		forrestGridNonDiagonal.walls = inWalls;
+		return true;
+	}
+
+	/// <summary>
+	/// Adds the forest map to weighted diagonal graph. Forest map is a map of pairs of Gridlocation elements and their values as int.
 	/// Any value can be passed, but should be above zero. Tiles with a value of 1 are
 	/// treated as default and do not have to be supplied to forest map.
 	/// </summary>
 	/// <param name="inForestWeights">The in forest weights.</param>
 	/// <returns>Bool if succeeded.</returns>
-	bool addForestMapToWeightedGraph(std::unordered_map<GridLocation, int> inForestWeights)
+	bool addForestMapToWeightedGraphDiagonal(std::unordered_map<GridLocation, int> inForestWeights)
 	{
 		for (auto& element : inForestWeights)
 		{
-			if (!forrestGrid.in_bounds(element.first))
+			if (!forrestGridDiagonal.in_bounds(element.first))
 				return false;
 		}
 
-		this->forrestGrid.forestWeights = inForestWeights;
+		this->forrestGridDiagonal.forestWeights = inForestWeights;
+		return true;
+	}
+
+	/// <summary>
+/// Adds the forest map to weighted graph. Forest map is a map of pairs of Gridlocation elements and their values as int.
+/// Any value can be passed, but should be above zero. Tiles with a value of 1 are
+/// treated as default and do not have to be supplied to forest map.
+/// </summary>
+/// <param name="inForestWeights">The in forest weights.</param>
+/// <returns>Bool if succeeded.</returns>
+	bool addForestMapToWeightedGraphNonDiagonal(std::unordered_map<GridLocation, int> inForestWeights)
+	{
+		for (auto& element : inForestWeights)
+		{
+			if (!forrestGridNonDiagonal.in_bounds(element.first))
+				return false;
+		}
+
+		this->forrestGridNonDiagonal.forestWeights = inForestWeights;
 		return true;
 	}
 
@@ -355,16 +536,42 @@ public:
 	/// <param name="start">The start.</param>
 	/// <param name="end">The end.</param>
 	/// <returns></returns>
-	std::vector<GridLocation> searchForWholePath(GridLocation start, GridLocation end)
+	std::vector<GridLocation> searchForWholePathDiagonal(GridLocation start, GridLocation end)
 	{
-		if (!forrestGrid.in_bounds(start) || !forrestGrid.in_bounds(end))
+		if (!forrestGridDiagonal.in_bounds(start) || !forrestGridDiagonal.in_bounds(end))
 		{
 			std::vector<GridLocation> empty;
 			return empty;
 		}
 
 		//do the whole thing.
-		a_star_search(this->forrestGrid, start, end, this->came_from, this->cost_so_far);
+		a_star_search_Euklidean(this->forrestGridDiagonal, start, end, this->came_from, this->cost_so_far);
+		this->came_from.clear();
+		this->cost_so_far.clear();
+
+		//reconstruct and return the walked path.
+		return reconstruct_path(start, end, this->came_from);
+	}
+
+	/// <summary>
+/// Returns a collection of elements, that describe a path form start to end, without the starting node!
+/// </summary>
+/// <param name="start">The start.</param>
+/// <param name="end">The end.</param>
+/// <returns></returns>
+	std::vector<GridLocation> searchForWholePathNonDiagonal(GridLocation start, GridLocation end)
+	{
+		if (!forrestGridNonDiagonal.in_bounds(start) || !forrestGridNonDiagonal.in_bounds(end))
+		{
+			std::vector<GridLocation> empty;
+			return empty;
+		}
+
+		//do the whole thing.
+		a_star_search_Manhattan(this->forrestGridNonDiagonal, start, end, this->came_from, this->cost_so_far);
+		this->came_from.clear();
+		this->cost_so_far.clear();
+
 		//reconstruct and return the walked path.
 		return reconstruct_path(start, end, this->came_from);
 	}
@@ -375,29 +582,67 @@ public:
 	/// <param name="start">The start.</param>
 	/// <param name="end">The end.</param>
 	/// <returns></returns>
-	GridLocation nextTile(GridLocation start, GridLocation end)
+	GridLocation nextTileDiagonal(GridLocation start, GridLocation end)
 	{
-		if (!forrestGrid.in_bounds(start) || !forrestGrid.in_bounds(end))
+		//clear the last data.
+		this->came_from.clear();
+		this->cost_so_far.clear();
+
+		if (!forrestGridDiagonal.in_bounds(start) || !forrestGridDiagonal.in_bounds(end))
 		{
-			GridLocation empty{ 0,0 };
-			return empty;
+			return INVALID_LOCATION;
 		}
 
 		if (start == end)
 		{
-			return start;
+			return INVALID_LOCATION;
 		}
 
 		//do the whole thing.
-		a_star_search(this->forrestGrid, start, end, this->came_from, this->cost_so_far);
+		a_star_search_Euklidean(this->forrestGridDiagonal, start, end, this->came_from, this->cost_so_far);
 		//reconstruct and return the walked path.
 		auto pathCollection = reconstruct_path(start, end, this->came_from);
+		if (pathCollection.size() == 0)
+			return INVALID_LOCATION;
+		return pathCollection.at(0);
+	}
+
+	/// <summary>
+	/// Returns a next logical tile to go to from the current position represented by start. Diagonal movement is allowed.
+	/// </summary>
+	/// <param name="start">The start.</param>
+	/// <param name="end">The end.</param>
+	/// <returns></returns>
+	GridLocation nextTileNonDiagonal(GridLocation start, GridLocation end)
+	{
+		//clear the last data.
+		this->came_from.clear();
+		this->cost_so_far.clear();
+
+		if (!forrestGridNonDiagonal.in_bounds(start) || !forrestGridNonDiagonal.in_bounds(end))
+		{
+			;
+			return INVALID_LOCATION;
+		}
+
+		if (start == end)
+		{
+			return INVALID_LOCATION;
+		}
+
+		//do the whole thing.
+		a_star_search_Manhattan(this->forrestGridNonDiagonal, start, end, this->came_from, this->cost_so_far);
+		//reconstruct and return the walked path.
+		auto pathCollection = reconstruct_path(start, end, this->came_from);
+		if (pathCollection.size() == 0)
+			return INVALID_LOCATION;
 		return pathCollection.at(0);
 	}
 
 public:
 	//The grid of elements with added collection for forrests.
-	GridWithWeights forrestGrid = GridWithWeights(0, 0);
+	GridWithWeightsDiagonal forrestGridDiagonal = GridWithWeightsDiagonal(0, 0);
+	GridWithWeightsNonDiagonal forrestGridNonDiagonal = GridWithWeightsNonDiagonal(0, 0);
 	// Some things we need for search;
 	std::unordered_map<GridLocation, GridLocation> came_from;
 	std::unordered_map<GridLocation, double> cost_so_far;
